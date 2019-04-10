@@ -9,6 +9,8 @@ import history from './history';
 const auth = new Auth();
 
 const handleAuthentication = ({location}) => {
+  console.log('the location', location);
+  console.log('the hash', location.hash);
   if (/access_token|id_token|error/.test(location.hash)) {
     auth.handleAuthentication();
   }

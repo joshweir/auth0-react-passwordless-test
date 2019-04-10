@@ -31,12 +31,19 @@ export default class Auth {
 
   handleAuthentication() {
     this.auth0.parseHash((err, authResult) => {
+      console.log('parsed hash', authResult, 'err:', err);
       if (authResult && authResult.accessToken && authResult.idToken) {
         this.setSession(authResult);
       } else if (err) {
-        history.replace('/home');
-        console.log(err);
-        alert(`Error: ${err.error}. Check the console for further details.`);
+        // when a magic link auth link is clicked, the parseHash fails with invalid_hash, 
+        // however if call auth0.authorize again this will immediately call back authorized
+        if (/invalid_hash/.test(err.error)) {
+          this.login();
+        } else {
+          history.replace('/home');
+          console.log(err);
+          alert(`Error: ${err.error}. Check the console for further details.`);
+        }
       }
     });
   }
