@@ -1,6 +1,6 @@
 import history from '../history';
 import auth0 from 'auth0-js';
-import { AUTH_CONFIG } from './auth0-variables';
+import { AUTH_CONFIG, JOSH_TEMP_CONFIG } from './auth0-variables';
 
 export default class Auth {
   accessToken;
@@ -25,11 +25,48 @@ export default class Auth {
     this.renewSession = this.renewSession.bind(this);
   }
 
-  login() {
-    this.auth0.authorize();
+  login(state) {
+    state ? 
+      this.auth0.authorize({ state: state }) : 
+      this.auth0.authorize();
   }
 
-  handleAuthentication() {
+  loginUsingSMS(state) {
+    this.auth0.passwordlessStart({
+      connection: 'sms',
+      send: 'code',
+      phoneNumber: JOSH_TEMP_CONFIG.phone_number,
+    }, function (err,res) {
+      if (err) {
+        console.error('sms auth error', err.toString());
+      }
+      console.log('sms auth callback', res);
+    })
+  }
+
+  verifySMSCode(verifyCode) {
+    this.auth0.passwordlessVerify({
+      connection: 'sms',
+      phoneNumber: JOSH_TEMP_CONFIG.phone_number,
+      verificationCode: verifyCode
+    }, function (err,res) {
+      if (err) {
+        console.error('sms verify code error', err.toString());
+      }
+      console.log('sms verify callback', res);
+    });
+  }
+
+  getParamFromHash(param, hash) {
+    const paramElement = hash.replace(/^#/, '').split('&').map(function(p) {
+      return p.split('=');
+    }).filter(function(p) {
+      return p[0] === param;
+    });
+    return paramElement.length > 0 ? paramElement[0][1] : '';
+  }
+
+  handleAuthentication(hash) {
     this.auth0.parseHash((err, authResult) => {
       console.log('parsed hash', authResult, 'err:', err);
       if (authResult && authResult.accessToken && authResult.idToken) {
@@ -38,7 +75,8 @@ export default class Auth {
         // when a magic link auth link is clicked, the parseHash fails with invalid_hash, 
         // however if call auth0.authorize again this will immediately call back authorized
         if (/invalid_hash/.test(err.error)) {
-          this.login();
+          const stateFromHash = this.getParamFromHash('state', hash);
+          this.login(stateFromHash);
         } else {
           history.replace('/home');
           console.log(err);
