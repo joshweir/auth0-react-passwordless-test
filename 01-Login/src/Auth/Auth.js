@@ -6,13 +6,14 @@ export default class Auth {
   accessToken;
   idToken;
   expiresAt;
+  phoneNumber;
 
   auth0 = new auth0.WebAuth({
     domain: AUTH_CONFIG.domain,
     clientID: AUTH_CONFIG.clientId,
     redirectUri: AUTH_CONFIG.callbackUrl,
     responseType: 'token id_token',
-    scope: 'openid'
+    scope: 'openid name profile email picture phone'
   });
 
   constructor() {
@@ -23,6 +24,7 @@ export default class Auth {
     this.getAccessToken = this.getAccessToken.bind(this);
     this.getIdToken = this.getIdToken.bind(this);
     this.renewSession = this.renewSession.bind(this);
+    this.phoneNumber = null;
   }
 
   login(state) {
@@ -31,14 +33,16 @@ export default class Auth {
       this.auth0.authorize();
   }
 
-  loginUsingSMS(state) {
+  loginUsingSMS(phoneNumber) {
+    this.phoneNumber = phoneNumber;
+    if (!this.phoneNumber) throw new Error('phone number is empty');
     this.auth0.passwordlessStart({
       connection: 'sms',
       send: 'code',
-      phoneNumber: JOSH_TEMP_CONFIG.phone_number,
+      phoneNumber: this.phoneNumber,
     }, function (err,res) {
       if (err) {
-        console.error('sms auth error', err.toString());
+        console.error('sms auth error', err);
       }
       console.log('sms auth callback', res);
     })
@@ -47,13 +51,29 @@ export default class Auth {
   verifySMSCode(verifyCode) {
     this.auth0.passwordlessVerify({
       connection: 'sms',
-      phoneNumber: JOSH_TEMP_CONFIG.phone_number,
+      phoneNumber: this.phoneNumber,
       verificationCode: verifyCode
     }, function (err,res) {
       if (err) {
-        console.error('sms verify code error', err.toString());
+        console.error('sms verify code error', err);
       }
-      console.log('sms verify callback', res);
+      console.log('sms verify callback', res, 'note here we havent redirected away from app, so state is still retained');
+    });
+  }
+
+  startMagicLinkEmail(email) {
+    this.auth0.passwordlessStart({
+      connection: 'email',
+      send: 'link',
+      email: email,
+      authParams: {
+        state: 'some app state here..'
+      }
+    }, function (err,res) {
+      if (err) {
+        console.error('email magic link send error', err);
+      }
+      console.log('email magic link send callback', res);
     });
   }
 

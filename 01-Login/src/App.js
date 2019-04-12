@@ -40,6 +40,13 @@ class App extends Component {
             >
               Home
             </Button>
+            <Button
+              bsStyle="primary"
+              className="btn-margin"
+              onClick={this.goTo.bind(this, 'mock-comm-auth-flow')}
+            >
+              Mock Comm Auth Flow
+            </Button>
             {
               !isAuthenticated() && (
                   <Button

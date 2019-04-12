@@ -3,29 +3,61 @@ import React, { Component } from 'react';
 class Home extends Component {
   constructor(props) {
     super(props);
-    this.state = { verifyCode: '', showVerifyCode: false };
+    this.state = { 
+      verifyCode: '', 
+      showVerifyCode: false,
+      magicLinkEmail: '',
+      magicLinkSent: false,
+      phoneNumber: '',
+    };
 
-    this.handleChange = this.handleChange.bind(this);
-    this.keyPress = this.keyPress.bind(this);
+    this.handleChangeSMSVerify = this.handleChangeSMSVerify.bind(this);
+    this.keyPressSMSVerify = this.keyPressSMSVerify.bind(this);
+    this.handleChangeEmail = this.handleChangeEmail.bind(this);
+    this.keyPressEmail = this.keyPressEmail.bind(this);
+    this.handleChangePhone = this.handleChangePhone.bind(this);
+    this.keyPressPhone = this.keyPressPhone.bind(this);
   }
 
-  handleChange(evt) {
+  handleChangeSMSVerify(evt) {
     this.setState({ verifyCode: evt.target.value });
   }
 
-  keyPress(e){
-    if(e.keyCode == 13 && this.state.verifyCode.length > 0){
+  keyPressSMSVerify(e){
+    if(e.keyCode === 13 && this.state.verifyCode.length > 0){
       this.props.auth.verifySMSCode(this.state.verifyCode);
     }
   }
   
+  handleChangeEmail(evt) {
+    this.setState({ magicLinkEmail: evt.target.value });
+  }
+
+  keyPressEmail(e){
+    if(e.keyCode === 13 && this.state.magicLinkEmail.length > 0){
+      this.props.auth.startMagicLinkEmail(this.state.magicLinkEmail);
+      this.setState({ magicLinkSent: true });
+    }
+  }
+
+  handleChangePhone(evt) {
+    this.setState({ phoneNumber: evt.target.value });
+  }
+
+  keyPressPhone(e){
+    if(e.keyCode === 13 && this.state.phoneNumber.length > 0){
+      this.props.auth.loginUsingSMS(this.state.phoneNumber);
+      this.setState({ showVerifyCode: true });
+    }
+  }
+
   login() {
     this.props.auth.login();
   }
   
-  loginUsingSMS() {
+  loginUsingSMS(phoneNumber) {
     this.setState({ showVerifyCode: true });
-    this.props.auth.loginUsingSMS();
+    this.props.auth.loginUsingSMS(phoneNumber);
   }
 
   render() {
@@ -59,16 +91,24 @@ class Home extends Component {
             this.state.showVerifyCode ?
               <div>
                 Enter the verification code sent to your phone:
-                <input value={this.state.verifyCode} onKeyDown={this.keyPress} onChange={this.handleChange} />
+                <input value={this.state.verifyCode} onKeyDown={this.keyPressSMSVerify} onChange={this.handleChangeSMSVerify} />
               </div> :
               <h4>
-                Or use SMS method{' '}
-                <a
-                  style={{ cursor: 'pointer' }}
-                  onClick={this.loginUsingSMS.bind(this)}
-                >
-                  Log In using SMS
-                </a>
+                Or submit mobile number to login using sms verify code{' '}
+                <input value={this.state.phoneNumber} onKeyDown={this.keyPressPhone} onChange={this.handleChangePhone} />
+                {' '}to continue.
+              </h4>
+            )
+        }
+        {
+          !isAuthenticated() && (
+            this.state.magicLinkSent ?
+              <div>
+                A magic link has been sent! Check your email..
+              </div> :
+              <h4>
+                Or submit email for a magic link email{' '}
+                <input value={this.state.magicLinkEmail} onKeyDown={this.keyPressEmail} onChange={this.handleChangeEmail} />
                 {' '}to continue.
               </h4>
             )
