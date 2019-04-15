@@ -1,12 +1,12 @@
 import history from '../history';
 import auth0 from 'auth0-js';
-import { AUTH_CONFIG, JOSH_TEMP_CONFIG } from './auth0-variables';
+import { AUTH_CONFIG } from './auth0-variables';
+import { linkAuth0PasswordlessUserWithBaseUser } from '../server-fake/link-auth0-passwordless-user-with-base-user';
 
 export default class Auth {
   accessToken;
   idToken;
   expiresAt;
-  phoneNumber;
 
   auth0 = new auth0.WebAuth({
     domain: AUTH_CONFIG.domain,
@@ -24,7 +24,6 @@ export default class Auth {
     this.getAccessToken = this.getAccessToken.bind(this);
     this.getIdToken = this.getIdToken.bind(this);
     this.renewSession = this.renewSession.bind(this);
-    this.phoneNumber = null;
   }
 
   login(state) {
@@ -33,13 +32,16 @@ export default class Auth {
       this.auth0.authorize();
   }
 
-  loginUsingSMS(phoneNumber) {
-    this.phoneNumber = phoneNumber;
-    if (!this.phoneNumber) throw new Error('phone number is empty');
+  loginUsingSMS(phoneNumber, stateToRetainOnCallback={}) {
+    localStorage.setItem('authState', JSON.stringify(stateToRetainOnCallback));
+    if (!phoneNumber) throw new Error('phone number is empty');
     this.auth0.passwordlessStart({
       connection: 'sms',
       send: 'code',
-      phoneNumber: this.phoneNumber,
+      phoneNumber: phoneNumber,
+      authParams: {
+        state: Buffer.from(JSON.stringify(stateToRetainOnCallback)).toString("base64")
+      }
     }, function (err,res) {
       if (err) {
         console.error('sms auth error', err);
@@ -48,10 +50,10 @@ export default class Auth {
     })
   }
 
-  verifySMSCode(verifyCode) {
+  verifySMSCode(verifyCode, phoneNumber) {
     this.auth0.passwordlessVerify({
       connection: 'sms',
-      phoneNumber: this.phoneNumber,
+      phoneNumber: phoneNumber,
       verificationCode: verifyCode
     }, function (err,res) {
       if (err) {
@@ -61,13 +63,13 @@ export default class Auth {
     });
   }
 
-  startMagicLinkEmail(email) {
+  startMagicLinkEmail(email, stateToRetainOnCallback={}) {
     this.auth0.passwordlessStart({
       connection: 'email',
       send: 'link',
       email: email,
       authParams: {
-        state: 'some app state here..'
+        state: Buffer.from(JSON.stringify(stateToRetainOnCallback)).toString("base64")
       }
     }, function (err,res) {
       if (err) {
@@ -114,15 +116,35 @@ export default class Auth {
     return this.idToken;
   }
 
-  setSession(authResult) {
-    // Set isLoggedIn flag in localStorage
-    localStorage.setItem('isLoggedIn', 'true');
-
+  async setSession(authResult) {
     // Set the time that the access token will expire at
     let expiresAt = (authResult.expiresIn * 1000) + new Date().getTime();
     this.accessToken = authResult.accessToken;
     this.idToken = authResult.idToken;
     this.expiresAt = expiresAt;
+
+    let authState = JSON.parse(localStorage.getItem('authState'));
+    if (!authState) {
+      authState = (new Buffer(authResult.state, 'base64')).toString();
+      localStorage.setItem('authState', JSON.stringify(authState));
+    }
+
+    if (!localStorage.getItem('isLoggedIn') && authState && authState.method === 'sms') {
+      const response = await linkAuth0PasswordlessUserWithBaseUser({
+        idTokenPayload: authResult.idTokenPayload,
+        accessToken: authResult.accessToken,
+        userMagicIdentifier: authState.magicUserIdentifier, 
+      });
+      console.log('did the merge', response);
+      if (response.ok) {
+        // authorize again to retrieved the merged token that includes the base user now with phone number
+        this.auth0.authorize();
+      }
+    }
+
+    // Set isLoggedIn flag in localStorage
+    localStorage.setItem('isLoggedIn', 'true');
+    localStorage.setItem('idTokenPayload', JSON.stringify(authResult.idTokenPayload));
 
     // navigate to the home route
     history.replace('/home');
@@ -148,6 +170,8 @@ export default class Auth {
 
     // Remove isLoggedIn flag from localStorage
     localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('authState');
+    localStorage.removeItem('idTokenPayload');
 
     this.auth0.logout({
       return_to: window.location.origin

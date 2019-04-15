@@ -25,7 +25,7 @@ class Home extends Component {
 
   keyPressSMSVerify(e){
     if(e.keyCode === 13 && this.state.verifyCode.length > 0){
-      this.props.auth.verifySMSCode(this.state.verifyCode);
+      this.props.auth.verifySMSCode(this.state.verifyCode, this.state.phoneNumber);
     }
   }
   
@@ -67,9 +67,16 @@ class Home extends Component {
       <div className="container">
         {
           isAuthenticated() && (
+              <div>
               <h4>
                 You are logged in!
               </h4>
+              <div>
+                {localStorage.getItem('idTokenPayload')}
+                <br /><br />state: <br />
+                {localStorage.getItem('authState')}
+              </div>
+              </div>
             )
         }
         {
