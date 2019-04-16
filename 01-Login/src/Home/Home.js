@@ -55,14 +55,13 @@ class Home extends Component {
     this.props.auth.login();
   }
   
-  loginUsingSMS(phoneNumber) {
+  async loginUsingSMS(phoneNumber) {
     this.setState({ showVerifyCode: true });
-    this.props.auth.loginUsingSMS(phoneNumber);
+    await this.props.auth.loginUsingSMS(phoneNumber);
   }
 
   render() {
     const { isAuthenticated } = this.props.auth;
-    console.log('render', this.state.showVerifyCode);
     return (
       <div className="container">
         {
@@ -75,6 +74,8 @@ class Home extends Component {
                 {localStorage.getItem('idTokenPayload')}
                 <br /><br />state: <br />
                 {localStorage.getItem('authState')}
+                <br /><br />email from token:<br />
+                <strong>{JSON.parse(localStorage.getItem('idTokenPayload'))['email']}</strong>
               </div>
               </div>
             )

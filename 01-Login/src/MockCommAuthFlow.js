@@ -1,6 +1,7 @@
 import React, { Component } from 'react';
 import { createBaseAuth0UserAndSha1UserIdentifier } from './server-fake/create-base-auth0-user-and-sha1-user-identifier';
 import { Button } from 'react-bootstrap';
+import { JOSH_TEMP_CONFIG } from './Auth/auth0-variables'
 
 const STEP_SERVER_SIM_CREATE_PARTICIPANT_IN_AUTH0 = 0;
 const STEP_MOCK_EMAIL_BUTTONS = 1;
@@ -10,10 +11,11 @@ class MockCommAuthFlow extends Component {
     super(props);
     this.state = {
       step: STEP_SERVER_SIM_CREATE_PARTICIPANT_IN_AUTH0,
-      email: 'josh.weir@smokeball.com',
-      phone: '+61421905094',
+      email: JOSH_TEMP_CONFIG.email,
+      phone: JOSH_TEMP_CONFIG.phone_number,
       passwordlessMethod: null,
       showVerifyCode: null,
+      smsVerifyError: '',
       verifyCode: '',
       magicUserIdentifier: null,
     }
@@ -29,15 +31,16 @@ class MockCommAuthFlow extends Component {
 
   async keyPressEmail(e){
     if(e.keyCode === 13 && this.state.email.length > 0){
-      this.setState({ magicUserIdentifier: createBaseAuth0UserAndSha1UserIdentifier(this.state.email, this.state.phone) });
+      this.setState({ magicUserIdentifier: await createBaseAuth0UserAndSha1UserIdentifier(this.state.email, this.state.phone) });
       this.nextStep();
     }
   }
 
-  handleChangeSMSVerify(evt) {
+  async handleChangeSMSVerify(evt) {
     this.setState({ verifyCode: evt.target.value });
     if (evt.target.value.length >= 6) {
-      this.props.auth.verifySMSCode(evt.target.value, this.state.phone);
+      const result = await this.props.auth.verifySMSCode(evt.target.value, this.state.phone);
+      this.setState({ smsVerifyError: result.error ? result.error : '' })
     }
   }
 
@@ -98,6 +101,9 @@ class MockCommAuthFlow extends Component {
                       onKeyDown={this.keyPressSMSVerify.bind(this)} 
                       onChange={this.handleChangeSMSVerify.bind(this)} 
                     />
+                    {this.state.smsVerifyError.length > 0 && 
+                      <div>{this.state.smsVerifyError}</div>
+                    }
                   </div>
                 ) 
               }

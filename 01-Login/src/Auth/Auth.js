@@ -2,6 +2,9 @@ import history from '../history';
 import auth0 from 'auth0-js';
 import { AUTH_CONFIG } from './auth0-variables';
 import { linkAuth0PasswordlessUserWithBaseUser } from '../server-fake/link-auth0-passwordless-user-with-base-user';
+const util = require('util');
+require('util.promisify').shim();
+const { promisify } = util;
 
 export default class Auth {
   accessToken;
@@ -24,6 +27,8 @@ export default class Auth {
     this.getAccessToken = this.getAccessToken.bind(this);
     this.getIdToken = this.getIdToken.bind(this);
     this.renewSession = this.renewSession.bind(this);
+    this.auth0.passwordlessStart = promisify(this.auth0.passwordlessStart);
+    this.auth0.passwordlessVerify = promisify(this.auth0.passwordlessVerify);
   }
 
   login(state) {
@@ -32,51 +37,75 @@ export default class Auth {
       this.auth0.authorize();
   }
 
-  loginUsingSMS(phoneNumber, stateToRetainOnCallback={}) {
+  async loginUsingSMS(phoneNumber, stateToRetainOnCallback={}) {
     localStorage.setItem('authState', JSON.stringify(stateToRetainOnCallback));
     if (!phoneNumber) throw new Error('phone number is empty');
-    this.auth0.passwordlessStart({
-      connection: 'sms',
-      send: 'code',
-      phoneNumber: phoneNumber,
-      authParams: {
-        state: Buffer.from(JSON.stringify(stateToRetainOnCallback)).toString("base64")
-      }
-    }, function (err,res) {
-      if (err) {
-        console.error('sms auth error', err);
-      }
-      console.log('sms auth callback', res);
-    })
+    try {
+      const response = await this.auth0.passwordlessStart({
+        connection: 'sms',
+        send: 'code',
+        phoneNumber: phoneNumber,
+        authParams: {
+          state: Buffer.from(JSON.stringify(stateToRetainOnCallback)).toString("base64")
+        }
+      });
+
+      return {
+        response,
+        ok: true,
+      };
+    } catch(err) {
+      console.warn('sms auth error', err.toString());
+      return {
+        ok: false,
+        error: err
+      };
+    }
   }
 
-  verifySMSCode(verifyCode, phoneNumber) {
-    this.auth0.passwordlessVerify({
-      connection: 'sms',
-      phoneNumber: phoneNumber,
-      verificationCode: verifyCode
-    }, function (err,res) {
-      if (err) {
-        console.error('sms verify code error', err);
+  async verifySMSCode(verifyCode, phoneNumber) {
+    try {
+      const response = await this.auth0.passwordlessVerify({
+        connection: 'sms',
+        phoneNumber: phoneNumber,
+        verificationCode: verifyCode
+      });
+
+      return {
+        response,
+        ok: true,
       }
-      console.log('sms verify callback', res, 'note here we havent redirected away from app, so state is still retained');
-    });
+    } catch(err) {
+      console.warn('sms verify error', err);
+      return {
+        ok: false,
+        error: err
+      };
+    }
   }
 
-  startMagicLinkEmail(email, stateToRetainOnCallback={}) {
-    this.auth0.passwordlessStart({
-      connection: 'email',
-      send: 'link',
-      email: email,
-      authParams: {
-        state: Buffer.from(JSON.stringify(stateToRetainOnCallback)).toString("base64")
-      }
-    }, function (err,res) {
-      if (err) {
-        console.error('email magic link send error', err);
-      }
-      console.log('email magic link send callback', res);
-    });
+  async startMagicLinkEmail(email, stateToRetainOnCallback={}) {
+    try {
+      const response = await this.auth0.passwordlessStart({
+        connection: 'email',
+        send: 'link',
+        email: email,
+        authParams: {
+          state: Buffer.from(JSON.stringify(stateToRetainOnCallback)).toString("base64")
+        }
+      });
+
+      return {
+        response,
+        ok: true,
+      };
+    } catch(err) {
+      console.warn('email magic link send error', err.toString());
+      return {
+        ok: false,
+        error: err.toString()
+      };
+    }
   }
 
   getParamFromHash(param, hash) {
@@ -90,14 +119,13 @@ export default class Auth {
 
   handleAuthentication(hash) {
     this.auth0.parseHash((err, authResult) => {
-      console.log('parsed hash', authResult, 'err:', err);
       if (authResult && authResult.accessToken && authResult.idToken) {
         this.setSession(authResult);
       } else if (err) {
         // when a magic link auth link is clicked, the parseHash fails with invalid_hash, 
         // however if call auth0.authorize again this will immediately call back authorized
-        if (/invalid_hash/.test(err.error)) {
-          const stateFromHash = this.getParamFromHash('state', hash);
+        if (/(invalid_hash|invalid_token)/.test(err.error)) {
+          const stateFromHash = this.getParamFromHash('state', decodeURI(hash));
           this.login(stateFromHash);
         } else {
           history.replace('/home');
@@ -125,8 +153,15 @@ export default class Auth {
 
     let authState = JSON.parse(localStorage.getItem('authState'));
     if (!authState) {
-      authState = (new Buffer(authResult.state, 'base64')).toString();
-      localStorage.setItem('authState', JSON.stringify(authState));
+      try {
+        authState = JSON.parse((new Buffer(decodeURI(authResult.state), 'base64')).toString());
+      } catch(e) {
+        console.log('authState is not json, do not store', e, authResult.state);
+      }
+
+      if (authState && (authState['email'] || authState['phone'])) {
+        localStorage.setItem('authState', JSON.stringify(authState));
+      }
     }
 
     if (!localStorage.getItem('isLoggedIn') && authState && authState.method === 'sms') {
@@ -135,7 +170,6 @@ export default class Auth {
         accessToken: authResult.accessToken,
         userMagicIdentifier: authState.magicUserIdentifier, 
       });
-      console.log('did the merge', response);
       if (response.ok) {
         // authorize again to retrieved the merged token that includes the base user now with phone number
         this.auth0.authorize();

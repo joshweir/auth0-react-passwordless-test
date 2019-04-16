@@ -1,8 +1,10 @@
 import { createHash } from 'crypto';
 import { createBaseAuth0User } from './create-base-auth0-user';
+import { getAuth0ManagementAPIToken } from './get-auth0-management-api-token';
 
-export const createBaseAuth0UserAndSha1UserIdentifier = (email, phone) => {
-  createBaseAuth0User(email);
+export const createBaseAuth0UserAndSha1UserIdentifier = async (email, phone) => {
+  const token = await getAuth0ManagementAPIToken();
+  createBaseAuth0User(token, email);
   
   return upsertMagicUserIdentifier(email, phone);
 };

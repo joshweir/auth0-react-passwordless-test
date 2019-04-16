@@ -9,7 +9,7 @@ export const confirmAuth0AccessToken = async (accessToken) => {
   });
   if (!response.ok) {
     console.warn(`confirming access token failed: \n` +
-      `http status: ${response.status} statusText: ${response.statusText} response: ${JSON.stringify(response)}`);
+      `http status: ${response.status} statusText: ${response.statusText} response: ${JSON.stringify(await response.json())}`);
     return null;
   }
   const confirmedTokenPayload = await response.json();

@@ -1,11 +1,15 @@
 import { confirmAuth0AccessToken } from './confirm-auth0-access-token';
 import { linkAuth0Users } from './link-auth0-users';
+import { getBaseAuth0UserByEmail } from './get-base-auth0-user-by-email';
+import { getAuth0ManagementAPIToken } from './get-auth0-management-api-token';
 
 const loadUserMagicIdentifierBySha1 = (userMagicIdentifier) => 
   JSON.parse(localStorage.getItem(`magicUserId|${userMagicIdentifier}`));
 
 export const linkAuth0PasswordlessUserWithBaseUser = async ({ idTokenPayload, accessToken, userMagicIdentifier }) => {
   try {
+    const token = await getAuth0ManagementAPIToken();
+
     // extract the authed type (email / sms - comes from the "sub" field in the idTokenPayload, 
     // eg. email|5cad5868a2cc5cb9c1013343, sms|5caee0eaa2cc5cb9c1059609) 
     // from the idToken, extract the phone number (if type sms) or email (if type email)
@@ -55,10 +59,17 @@ export const linkAuth0PasswordlessUserWithBaseUser = async ({ idTokenPayload, ac
     }
 
     // call the merge endpoint, merging the input auth0 account with the base account, base account user_id: auth0|[email]
-    const baseAuth0UserId = `auth0|${userMagicIdentifierBlob.email}`;
+    const baseAuth0User = await getBaseAuth0UserByEmail(token, userMagicIdentifierBlob.email);
+    if (!baseAuth0User) {
+      const error = `No base auth0 user for email userMagicIdentifierBlob.email`;
+      console.warn(error);
+      throw new Error(error);
+    }
+    const baseAuth0UserId = baseAuth0User.user_id;
     const toMergeAuth0UserId = confirmedTokenPayload.sub;
     const toMergeAuth0UserProvider = 'sms';
     const response = await linkAuth0Users(
+      token,
       baseAuth0UserId,
       toMergeAuth0UserId,
       toMergeAuth0UserProvider,
@@ -66,7 +77,7 @@ export const linkAuth0PasswordlessUserWithBaseUser = async ({ idTokenPayload, ac
     if (!response.ok) {
       const error = `linking auth0 base user (${baseAuth0UserId}) with ` +
         `${toMergeAuth0UserProvider} user (${toMergeAuth0UserId}) failed: \n` +
-        `http status: ${response.status} statusText: ${response.statusText} response: ${JSON.stringify(response)}`;
+        `http status: ${response.status} statusText: ${response.statusText} response: ${JSON.stringify(await response.json())}`;
       console.warn(error);
       throw new Error(error);
     }
