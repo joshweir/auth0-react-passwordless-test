@@ -1,7 +1,8 @@
+import { loadUserConversationIdentifier } from './load-user-conversation-identifier';
 
 const loadUserPhoneFromUserConversationIdentifier = async (userConversationIdentifier) => {
   // mock loading the magicUserIdentifier from magicUserIdentifier table by sha1 value
-  const userIdentifierRaw = localStorage.getItem(`magicUserId|${userConversationIdentifier}`);
+  const userIdentifierRaw = await loadUserConversationIdentifier(userConversationIdentifier);
   if (!userIdentifierRaw || userIdentifierRaw.length <= 0) {
     return null;
   }

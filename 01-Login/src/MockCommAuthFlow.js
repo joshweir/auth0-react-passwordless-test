@@ -2,6 +2,8 @@ import React, { Component } from 'react';
 import { simulateBackendCreateConvUserIdentifierAndUserClickingEmailLink } from './server-fake/simulate-backend-create-conv-user-identifier-and-user-clicking-email-link';
 import { Button } from 'react-bootstrap';
 import { JOSH_TEMP_CONFIG } from './Auth/auth0-variables'
+import { stripPhoneNumber } from './server-fake/strip-phone-number';
+import { verifyAndUpdateUserPhone } from './server-fake/verify-and-update-user-phone';
 
 const STEP_NEW_PARTICIPANT_EVENT_OR_HOME_PAGE = 0;
 const STEP_MOCK_PARTICIPANT_DATA = 1;
@@ -20,6 +22,8 @@ class MockCommAuthFlow extends Component {
       verifyCode: '',
       magicUserIdentifier: null,
       conversationUri: '',
+      userEnteredPhone: '',
+      userEnteredPhoneError: '',
     }
   }
 
@@ -34,6 +38,18 @@ class MockCommAuthFlow extends Component {
   keyPressSMSVerify(e){
     if(e.keyCode === 13 && this.state.verifyCode.length > 0){
       this.props.auth.verifySMSCode(this.state.verifyCode, this.state.phone);
+    }
+  }
+
+  async keyPressUserEnteredPhone(e){
+    if(e.keyCode === 13 && this.state.userEnteredPhone.length > 0){
+      const { verifiedPhone, error } = await verifyAndUpdateUserPhone({
+        phone: this.state.userEnteredPhone,
+        userConversationIdentifier: this.state.magicUserIdentifier,
+      });
+      if (!verifiedPhone) {
+        this.setState({ userEnteredPhoneError: error });
+      }
     }
   }
 
@@ -164,7 +180,7 @@ class MockCommAuthFlow extends Component {
                   <input 
                     value={this.state.userEnteredPhone} 
                     onKeyDown={this.keyPressUserEnteredPhone.bind(this)} 
-                    onChange={this.handleChangeUserEnteredPhone.bind(this)} 
+                    onChange={(evt) => this.setState({ userEnteredPhone: stripPhoneNumber(evt.target.value) })} 
                   />
                   {this.state.userEnteredPhoneError.length > 0 && 
                     <div>{this.state.userEnteredPhoneError}</div>
