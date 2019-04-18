@@ -14,10 +14,7 @@ const upsertConversationUserIdentifier = (email, conversationUri) => {
     sha1: userBlobSha1
   };
   // mock item being stored in a secure db table
-  localStorage.setItem(
-    `magicUserId|${userBlobSha1}`,
-    JSON.stringify(userIdentifier),
-  )
+  localStorage.setItem(`magicUserId|${userBlobSha1}`, JSON.stringify(userIdentifier));
 
   return userIdentifier.sha1;
 }

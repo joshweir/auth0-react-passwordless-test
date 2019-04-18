@@ -3,19 +3,19 @@ import { loadUserConversationIdentifier } from './load-user-conversation-identif
 const loadUserPhoneFromUserConversationIdentifier = async (userConversationIdentifier) => {
   // mock loading the magicUserIdentifier from magicUserIdentifier table by sha1 value
   const userIdentifierRaw = await loadUserConversationIdentifier(userConversationIdentifier);
-  if (!userIdentifierRaw || userIdentifierRaw.length <= 0) {
+  if (!userIdentifierRaw) {
     return null;
   }
 
   const { email } = JSON.parse(userIdentifierRaw);
-  if (!email || email.length <= 0) {
+  if (!email) {
     console.warn('Could not retrieve email from user conversation identifier', userIdentifierRaw);
     return null;
   }
 
   // mock loading the phone number from user db record
   const phone = localStorage.getItem(`userPhone|${email}`);
-  if (!phone || phone.length <= 0) {
+  if (!phone) {
     return null;
   }
 

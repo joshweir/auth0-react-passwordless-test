@@ -1,33 +1,45 @@
 import { AUTH_CONFIG } from '../Auth/auth0-variables';
-import Twilio from 'twilio';
-import { stripPhoneNumber } from './strip-phone-number';
-
-let twilio;
+import { stripPhoneNumber } from '../common-util/strip-phone-number';
+import { prefixPhoneCountryCode } from './prefix-phone-country-code';
 
 export const verifyPhoneWithTwilio = async (phone) => {
-  const strippedPhone = stripPhoneNumber(phone);
-  if (!strippedPhone || strippedPhone.length <= 0) {
+  const strippedPhone = prefixPhoneCountryCode(stripPhoneNumber(phone));
+  if (!strippedPhone) {
     return {
       verifiedPhone: null,
       error: 'Phone is not a valid phone number (must be "+" or numbers)'
     }
   }
-  
-  if (!twilio) {
-    twilio = new Twilio(AUTH_CONFIG.twilioSid, AUTH_CONFIG.twilioToken);
-  }
 
-  const response = await twilio.lookups.phoneNumbers(strippedPhone).fetch();
-  console.log('twilio response', response);
-  if (!response || !response.phone_number || response.phone_number.length <= 0) {
+  const response = await fetch(`https://lookups.twilio.com/v1/PhoneNumbers/${strippedPhone}`, { 
+    method: 'GET',
+    headers: {
+      'Authorization': `Basic ${Buffer.from(`${AUTH_CONFIG.twilioSid}:${AUTH_CONFIG.twilioToken}`).toString("base64")}`,
+      'Content-Type': 'application/json'
+    },
+  });
+  if (!response.ok) {
     return {
       verifiedPhone: null,
-      error: `error verifying phone (${strippedPhone}) with twilio: ${response}`
+      error: response.status === 404 ? 
+        `Unrecognized phone number: ${strippedPhone}` :
+        `twilio phone number lookup (${strippedPhone}) failed: \n` +
+        `http status: ${response.status} statusText: ${response.statusText} ` +
+        `response: ${JSON.stringify(await response.json())}`
+    };
+  }
+  const responseObject = await response.json();
+  console.log('twilio response', responseObject);
+  const { phone_number } = responseObject;
+  if (!phone_number) {
+    return {
+      verifiedPhone: null,
+      error: `error verifying phone (${strippedPhone}) with twilio: ${responseObject}`
     }
   }
-
+  
   return {
-    verifiedPhone: response.phone_number,
+    verifiedPhone: phone_number,
     error: null,
   }
 }

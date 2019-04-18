@@ -2,12 +2,15 @@ import React, { Component } from 'react';
 import { simulateBackendCreateConvUserIdentifierAndUserClickingEmailLink } from './server-fake/simulate-backend-create-conv-user-identifier-and-user-clicking-email-link';
 import { Button } from 'react-bootstrap';
 import { JOSH_TEMP_CONFIG } from './Auth/auth0-variables'
-import { stripPhoneNumber } from './server-fake/strip-phone-number';
+import { stripPhoneNumber } from './common-util/strip-phone-number';
 import { verifyAndUpdateUserPhone } from './server-fake/verify-and-update-user-phone';
+import { basicEmailValidation } from './common-util/basic-email-validation';
 
 const STEP_NEW_PARTICIPANT_EVENT_OR_HOME_PAGE = 0;
 const STEP_MOCK_PARTICIPANT_DATA = 1;
 const STEP_USER_CLICKED_EMAIL_LINK = 2;
+const STEP_MOCK_USER_NAV_HOME_PAGE_DIRECT = 3;
+const STEP_EMAIL_MAGIC_LINK_SENT = 4;
 
 class MockCommAuthFlow extends Component {
   constructor(props) {
@@ -24,32 +27,8 @@ class MockCommAuthFlow extends Component {
       conversationUri: '',
       userEnteredPhone: '',
       userEnteredPhoneError: '',
-    }
-  }
-
-  async handleChangeSMSVerify(evt) {
-    this.setState({ verifyCode: evt.target.value });
-    if (evt.target.value.length >= 6) {
-      const result = await this.props.auth.verifySMSCode(evt.target.value, this.state.phone);
-      this.setState({ smsVerifyError: !!result.error ? result.error : '' })
-    }
-  }
-
-  keyPressSMSVerify(e){
-    if(e.keyCode === 13 && this.state.verifyCode.length > 0){
-      this.props.auth.verifySMSCode(this.state.verifyCode, this.state.phone);
-    }
-  }
-
-  async keyPressUserEnteredPhone(e){
-    if(e.keyCode === 13 && this.state.userEnteredPhone.length > 0){
-      const { verifiedPhone, error } = await verifyAndUpdateUserPhone({
-        phone: this.state.userEnteredPhone,
-        userConversationIdentifier: this.state.magicUserIdentifier,
-      });
-      if (!verifiedPhone) {
-        this.setState({ userEnteredPhoneError: error });
-      }
+      userEnteredEmail: '',
+      userEnteredEmailError: '',
     }
   }
 
@@ -57,13 +36,14 @@ class MockCommAuthFlow extends Component {
     if(this.state.email.length > 0 && this.state.conversationUri.length > 0){
       // mock the fact that the userStoredPhone would already be stored against the user in db
       if (this.state.userStoredPhone.toString().length > 0) {
-        localStorage.setItem(`userPhone|${this.state.email}`, JSON.stringify(this.state.userStoredPhone));
+        localStorage.setItem(`userPhone|${this.state.email}`, this.state.userStoredPhone);
       }
 
       const { magicUserIdentifier, phone } = await simulateBackendCreateConvUserIdentifierAndUserClickingEmailLink(
         this.state.email, 
         this.state.conversationUri,
       );
+
       this.setState({
         magicUserIdentifier,
         phone,
@@ -71,12 +51,84 @@ class MockCommAuthFlow extends Component {
         showVerifyCode: !!phone,
       });
       if (!!phone) {
-        this.props.auth.loginUsingSMS(phone, {
+        const { ok, error } = await this.props.auth.loginUsingSMS(phone, {
           phone,
           magicUserIdentifier,
           email: this.state.email,
           method: 'sms',
         });
+        if (!ok) {
+          this.setState({ userEnteredPhoneError: error ? error.description : '' })
+        }
+      }
+    }
+  }
+
+  async keyPressUserEnteredPhone(e){
+    if(e.keyCode === 13 && this.state.userEnteredPhone.length > 0){
+      const { phone, error } = await verifyAndUpdateUserPhone({
+        phone: this.state.userEnteredPhone,
+        userConversationIdentifier: this.state.magicUserIdentifier,
+      });
+      if (!!phone) {
+        const { ok, error } = await this.props.auth.loginUsingSMS(phone, {
+          phone,
+          email: this.state.email,
+          method: 'sms',
+          magicUserIdentifier: this.state.magicUserIdentifier,
+        });
+        if (!ok) {
+          this.setState({ userEnteredPhoneError: error ? error.description : '' })
+        } else {
+          this.setState({ phone })
+        }
+      } else {
+        this.setState({ userEnteredPhoneError: error ? error.description : '' });
+      };
+    }
+  }
+
+  async handleChangeSMSVerify(evt) {
+    this.setState({ verifyCode: evt.target.value });
+    if (evt.target.value.length >= 6) {
+      const result = await this.props.auth.verifySMSCode(evt.target.value, this.state.phone);
+      this.setState({ smsVerifyError: result.error ? result.error.description : '' })
+    }
+  }
+
+  keyPressSMSVerify(e){
+    if(e.keyCode === 13 && this.state.verifyCode.length > 0){
+      const result = this.props.auth.verifySMSCode(this.state.verifyCode, this.state.phone);
+      this.setState({ smsVerifyError: result.error ? result.error.description : '' })
+    } else {
+      this.setState({ smsVerifyError: '' });
+    }
+  }
+
+  async changeUserEnteredEmail(e) {
+    const emailValid = basicEmailValidation(e.target.value);
+    this.setState({ 
+      userEnteredEmail: e.target.value,
+      userEnteredEmailError: emailValid ? '' : 'Please enter a valid email address',
+    });
+  }
+
+  async keyPressUserEnteredEmail(e) {
+    if(e.keyCode === 13 && this.state.userEnteredEmail.length > 0){
+      const emailValid = basicEmailValidation(this.state.userEnteredEmail);
+      if (emailValid) {
+        const result = this.props.auth.startMagicLinkEmail(this.state.userEnteredEmail, {
+          email: this.state.userEnteredEmail,
+          method: 'email',
+        });
+        this.setState({
+          userEnteredEmailError: result.error ? result.error.description : '',
+          step: result.error ? this.state.step : STEP_EMAIL_MAGIC_LINK_SENT,
+        })
+      } else {
+        this.setState({
+          userEnteredEmailError: 'Please enter a valid email address'
+        })
       }
     }
   }
@@ -96,7 +148,6 @@ class MockCommAuthFlow extends Component {
         {
           !isAuthenticated() && step === STEP_NEW_PARTICIPANT_EVENT_OR_HOME_PAGE && (
             <div>
-              <h4>Step #{step + 1}</h4>
               <Button
                 bsStyle="primary"
                 className="btn-margin"
@@ -114,7 +165,10 @@ class MockCommAuthFlow extends Component {
                 bsStyle="primary"
                 className="btn-margin"
                 onClick={() => {
-
+                  this.setState({ 
+                    conversationUri: JOSH_TEMP_CONFIG.conversationUri,
+                    step: STEP_MOCK_USER_NAV_HOME_PAGE_DIRECT,
+                  });
                 }}
               >
                 User lands on app root page
@@ -128,7 +182,6 @@ class MockCommAuthFlow extends Component {
         {
           !isAuthenticated() && step === STEP_MOCK_PARTICIPANT_DATA && (
             <div>
-              <h4>Step #{step + 1}</h4>
               <p>This is the participant event data:</p>
               <input 
                 value={this.state.conversationUri} 
@@ -160,7 +213,7 @@ class MockCommAuthFlow extends Component {
           !isAuthenticated() && step === STEP_USER_CLICKED_EMAIL_LINK && (
             <div>
             {
-              !!phone ? (
+              !!phone && !this.state.userEnteredPhoneError ? (
                 <div>
                   <div>Enter the verification code sent to your phone {
                     phone.slice(0,4) + (new Array(phone.slice(5,-2).length)).join('*') + phone.slice(-2)
@@ -170,7 +223,7 @@ class MockCommAuthFlow extends Component {
                     onKeyDown={this.keyPressSMSVerify.bind(this)} 
                     onChange={this.handleChangeSMSVerify.bind(this)} 
                   />
-                  {this.state.smsVerifyError.length > 0 && 
+                  {this.state.smsVerifyError && 
                     <div>{this.state.smsVerifyError}</div>
                   }
                 </div>
@@ -182,7 +235,7 @@ class MockCommAuthFlow extends Component {
                     onKeyDown={this.keyPressUserEnteredPhone.bind(this)} 
                     onChange={(evt) => this.setState({ userEnteredPhone: stripPhoneNumber(evt.target.value) })} 
                   />
-                  {this.state.userEnteredPhoneError.length > 0 && 
+                  {this.state.userEnteredPhoneError && 
                     <div>{this.state.userEnteredPhoneError}</div>
                   }
                 </div>
@@ -194,70 +247,26 @@ class MockCommAuthFlow extends Component {
         {/*
           MOCKING user navs to landing page direct flow...
         */}
-        { /* This step is unused, leaving here until i use all the bits from it above.. */
-          !isAuthenticated() && step === -1 && (
+        {
+          !isAuthenticated() && step === STEP_MOCK_USER_NAV_HOME_PAGE_DIRECT && (
             <div>
-              <h4>Step #{step + 1}</h4>
-              { 
-                passwordlessMethod && passwordlessMethod === 'email' && (
-                  <div>
-                    A magic link has been sent! Check your email {this.state.email}..
-                  </div>
-                ) 
+              <p>Enter your email:</p>
+              <input 
+                value={this.state.userEnteredEmail} 
+                onKeyDown={this.keyPressUserEnteredEmail.bind(this)} 
+                onChange={this.changeUserEnteredEmail.bind(this)} 
+                placeholder="enter email.."
+              />
+              {this.state.userEnteredEmailError && 
+                <div>{this.state.userEnteredEmailError}</div>
               }
-              { 
-                passwordlessMethod && passwordlessMethod === 'phone' && showVerifyCode && (
-                  <div>
-                    Enter the verification code sent to your phone:
-                    <input 
-                      value={this.state.verifyCode} 
-                      onKeyDown={this.keyPressSMSVerify.bind(this)} 
-                      onChange={this.handleChangeSMSVerify.bind(this)} 
-                    />
-                    {this.state.smsVerifyError.length > 0 && 
-                      <div>{this.state.smsVerifyError}</div>
-                    }
-                  </div>
-                ) 
-              }
-              { 
-                !passwordlessMethod && (
-                  <div>
-                    <p>Mock email buttons:</p>
-                    <Button
-                      bsStyle="primary"
-                      className="btn-margin"
-                      onClick={() => {
-                        this.setState({ passwordlessMethod: 'phone' });
-                        this.props.auth.loginUsingSMS(this.state.phone, {
-                          phone: this.state.phone,
-                          email: this.state.email,
-                          method: 'sms',
-                          magicUserIdentifier: this.state.magicUserIdentifier,
-                        });
-                        this.setState({ showVerifyCode: true });
-                      }}
-                    >
-                      User has phone number
-                    </Button>
-                    <Button
-                      bsStyle="primary"
-                      className="btn-margin"
-                      onClick={() => {
-                        this.setState({ passwordlessMethod: 'email' });
-                        this.props.auth.startMagicLinkEmail(this.state.email, {
-                          phone: this.state.phone,
-                          email: this.state.email,
-                          method: 'email',
-                          magicUserIdentifier: this.state.magicUserIdentifier,
-                        });
-                      }}
-                    >
-                      User has only email
-                    </Button>
-                  </div>
-                ) 
-              }
+            </div>
+          )
+        }
+        {
+          !isAuthenticated() && step === STEP_EMAIL_MAGIC_LINK_SENT && (
+            <div>
+              <p>An email with a magic login link has been sent to {this.state.userEnteredEmail}, please check your email..</p>
             </div>
           )
         }

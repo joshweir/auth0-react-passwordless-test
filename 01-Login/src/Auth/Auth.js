@@ -1,7 +1,7 @@
 import history from '../history';
 import auth0 from 'auth0-js';
 import { AUTH_CONFIG } from './auth0-variables';
-import { linkAuth0PasswordlessUserWithBaseUser } from '../server-fake/link-auth0-passwordless-user-with-base-user';
+import { linkAuth0PhonePasswordlessUserWithBaseUser } from '../server-fake/link-auth0-passwordless-user-with-base-user';
 const util = require('util');
 require('util.promisify').shim();
 const { promisify } = util;
@@ -39,8 +39,8 @@ export default class Auth {
 
   async loginUsingSMS(phoneNumber, stateToRetainOnCallback={}) {
     localStorage.setItem('authState', JSON.stringify(stateToRetainOnCallback));
-    if (!phoneNumber) throw new Error('phone number is empty');
     try {
+      if (!phoneNumber) throw new Error('phone number is empty');
       const response = await this.auth0.passwordlessStart({
         connection: 'sms',
         send: 'code',
@@ -55,7 +55,7 @@ export default class Auth {
         ok: true,
       };
     } catch(err) {
-      console.warn('sms auth error', err.toString());
+      console.warn('sms auth error', err);
       return {
         ok: false,
         error: err
@@ -100,10 +100,10 @@ export default class Auth {
         ok: true,
       };
     } catch(err) {
-      console.warn('email magic link send error', err.toString());
+      console.warn('email magic link send error', err);
       return {
         ok: false,
-        error: err.toString()
+        error: err
       };
     }
   }
@@ -165,8 +165,7 @@ export default class Auth {
     }
 
     if (!localStorage.getItem('isLoggedIn') && authState && authState.method === 'sms') {
-      const response = await linkAuth0PasswordlessUserWithBaseUser({
-        idTokenPayload: authResult.idTokenPayload,
+      const response = await linkAuth0PhonePasswordlessUserWithBaseUser({
         accessToken: authResult.accessToken,
         userMagicIdentifier: authState.magicUserIdentifier, 
       });
