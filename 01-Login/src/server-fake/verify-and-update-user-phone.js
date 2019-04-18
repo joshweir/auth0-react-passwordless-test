@@ -3,7 +3,8 @@ import { stripPhoneNumber } from '../common-util/strip-phone-number';
 import { verifyPhoneWithTwilio } from './verify-phone-with-twilio';
 import { confirmAuth0AccessToken } from './confirm-auth0-access-token';
 
-TODO: too much duplication in this code
+TODO: too much duplication in this code, do same for other userConversationIdentifier / emailBasedAccessToken 
+functions 
 
 const verifyAndUpdateUserPhoneFromUserConversationIdentifier = async (userConversationIdentifier, phone) => {
   // mock loading the magicUserIdentifier from magicUserIdentifier table by sha1 value
