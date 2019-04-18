@@ -11,13 +11,20 @@ const STEP_MOCK_PARTICIPANT_DATA = 1;
 const STEP_USER_CLICKED_EMAIL_LINK = 2;
 const STEP_MOCK_USER_NAV_HOME_PAGE_DIRECT = 3;
 const STEP_EMAIL_MAGIC_LINK_SENT = 4;
+const STEP_FROM_EMAIL_MAGIC_LINK = 5;
 
 class MockCommAuthFlow extends Component {
   constructor(props) {
     super(props);
     this.state = {
-      step: STEP_NEW_PARTICIPANT_EVENT_OR_HOME_PAGE,
-      email: JOSH_TEMP_CONFIG.email,
+      step: props.location && props.location.state && props.location.state.emailBasedAccessToken ? 
+        STEP_FROM_EMAIL_MAGIC_LINK : STEP_NEW_PARTICIPANT_EVENT_OR_HOME_PAGE,
+      email: props.location && props.location.state && props.location.state.email ? 
+        props.location.state.email : JOSH_TEMP_CONFIG.email,
+      phone: props.location && props.location.state && props.location.state.phone ? 
+        props.location.state.phone : null,
+      emailBasedAccessToken: props.location && props.location.state && props.location.state.emailBasedAccessToken ? 
+        props.location.state.emailBasedAccessToken : null,
       userStoredPhone: JOSH_TEMP_CONFIG.phone_number,
       passwordlessMethod: null,
       showVerifyCode: null,
@@ -65,10 +72,12 @@ class MockCommAuthFlow extends Component {
   }
 
   async keyPressUserEnteredPhone(e){
+    TODO: update this based on emailBasedAccessToken
     if(e.keyCode === 13 && this.state.userEnteredPhone.length > 0){
       const { phone, error } = await verifyAndUpdateUserPhone({
         phone: this.state.userEnteredPhone,
         userConversationIdentifier: this.state.magicUserIdentifier,
+        emailBasedAccessToken: this.state.emailBasedAccessToken,
       });
       if (!!phone) {
         const { ok, error } = await this.props.auth.loginUsingSMS(phone, {
@@ -89,6 +98,7 @@ class MockCommAuthFlow extends Component {
   }
 
   async handleChangeSMSVerify(evt) {
+    TODO: update this based on emailBasedAccessToken
     this.setState({ verifyCode: evt.target.value });
     if (evt.target.value.length >= 6) {
       const result = await this.props.auth.verifySMSCode(evt.target.value, this.state.phone);
@@ -96,7 +106,8 @@ class MockCommAuthFlow extends Component {
     }
   }
 
-  keyPressSMSVerify(e){
+  keyPressSMSVerify(e) {
+    TODO: update this based on emailBasedAccessToken?
     if(e.keyCode === 13 && this.state.verifyCode.length > 0){
       const result = this.props.auth.verifySMSCode(this.state.verifyCode, this.state.phone);
       this.setState({ smsVerifyError: result.error ? result.error.description : '' })
@@ -135,7 +146,7 @@ class MockCommAuthFlow extends Component {
 
   render() {
     const { isAuthenticated } = this.props.auth;
-    const { step, passwordlessMethod, showVerifyCode, phone } = this.state;
+    const { step, phone } = this.state;
     return (
       <div className="container">
         {
@@ -267,6 +278,41 @@ class MockCommAuthFlow extends Component {
           !isAuthenticated() && step === STEP_EMAIL_MAGIC_LINK_SENT && (
             <div>
               <p>An email with a magic login link has been sent to {this.state.userEnteredEmail}, please check your email..</p>
+            </div>
+          )
+        }
+        {
+          !isAuthenticated() && step === STEP_FROM_EMAIL_MAGIC_LINK && (
+            <div>
+            {
+              !!phone && !this.state.userEnteredPhoneError ? (
+                <div>
+                  <div>Enter the verification code sent to your phone {
+                    phone.slice(0,4) + (new Array(phone.slice(5,-2).length)).join('*') + phone.slice(-2)
+                  }</div>
+                  <input 
+                    value={this.state.verifyCode} 
+                    onKeyDown={this.keyPressSMSVerify.bind(this)} 
+                    onChange={this.handleChangeSMSVerify.bind(this)} 
+                  />
+                  {this.state.smsVerifyError && 
+                    <div>{this.state.smsVerifyError}</div>
+                  }
+                </div>
+              ) : (
+                <div>
+                  <div>Enter your mobile phone number, we will send you a verification code to log you in</div>
+                  <input 
+                    value={this.state.userEnteredPhone} 
+                    onKeyDown={this.keyPressUserEnteredPhone.bind(this)} 
+                    onChange={(evt) => this.setState({ userEnteredPhone: stripPhoneNumber(evt.target.value) })} 
+                  />
+                  {this.state.userEnteredPhoneError && 
+                    <div>{this.state.userEnteredPhoneError}</div>
+                  }
+                </div>
+              )
+            }
             </div>
           )
         }

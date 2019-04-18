@@ -20,7 +20,7 @@ export const linkAuth0PhonePasswordlessUserWithBaseUser = async ({ accessToken, 
 
     const confirmedTokenPayload = await confirmAuth0AccessToken(accessToken);
     if (!confirmedTokenPayload) {
-      const error = `Auth0 says access token is valid: ${accessToken}`;
+      const error = `Auth0 says access token is invalid: ${accessToken}`;
       console.warn(error);
       throw new Error(error);
     }

@@ -2,6 +2,7 @@ import history from '../history';
 import auth0 from 'auth0-js';
 import { AUTH_CONFIG } from './auth0-variables';
 import { linkAuth0PhonePasswordlessUserWithBaseUser } from '../server-fake/link-auth0-passwordless-user-with-base-user';
+import { loadUserPhoneLambda } from '../server-fake/load-user-phone-lambda';
 const util = require('util');
 require('util.promisify').shim();
 const { promisify } = util;
@@ -118,14 +119,40 @@ export default class Auth {
   }
 
   handleAuthentication(hash) {
-    this.auth0.parseHash((err, authResult) => {
+    this.auth0.parseHash(async (err, authResult) => {
       if (authResult && authResult.accessToken && authResult.idToken) {
-        this.setSession(authResult);
+        const authState = await this.persistAuthStateIfNotYetDefined(authResult.state);
+
+        if (!localStorage.getItem('isLoggedIn') && authState && authState.method === 'sms') {
+          const response = await linkAuth0PhonePasswordlessUserWithBaseUser({
+            accessToken: authResult.accessToken,
+            userMagicIdentifier: authState.magicUserIdentifier, 
+          });
+          if (response.ok) {
+            // authorize again to retrieved the merged token that includes the base user now with phone number
+            this.auth0.authorize();
+          } else {
+            console.warn('need to determine what to do here, it cannot just remain on the ' +
+              'callback landing page if the linking of auth0 accounts fails..')
+          }
+        }
+
+        if (!localStorage.getItem('isLoggedIn') && authState && authState.method === 'email') {
+          const phone = await loadUserPhoneLambda({ emailBasedAccessToken: authResult.accessToken });
+
+          history.replace('/mock-comm-auth-flow', { 
+            phone,
+            email: authState.email, 
+            emailBasedAccessToken: authResult.accessToken,
+          });
+        } else {
+          this.setSession(authResult);
+        }
       } else if (err) {
         // when a magic link auth link is clicked, the parseHash fails with invalid_hash, 
         // however if call auth0.authorize again this will immediately call back authorized
         if (/(invalid_hash|invalid_token)/.test(err.error)) {
-          const stateFromHash = this.getParamFromHash('state', decodeURI(hash));
+          const stateFromHash = this.getParamFromHash('state', decodeURIComponent(hash));
           this.login(stateFromHash);
         } else {
           history.replace('/home');
@@ -144,36 +171,28 @@ export default class Auth {
     return this.idToken;
   }
 
+  async persistAuthStateIfNotYetDefined(authResultState) {
+    let authState = JSON.parse(localStorage.getItem('authState'));
+    if (!authState) {
+      try {
+        authState = JSON.parse((new Buffer(decodeURIComponent(authResultState), 'base64')).toString());
+      } catch(e) {
+        console.log('authState is not json, do not store', e, authResultState);
+      }
+      if (authState && (authState['email'] || authState['phone'])) {
+        localStorage.setItem('authState', JSON.stringify(authState));
+      }
+    }
+
+    return JSON.parse(localStorage.getItem('authState'));
+  }
+
   async setSession(authResult) {
     // Set the time that the access token will expire at
     let expiresAt = (authResult.expiresIn * 1000) + new Date().getTime();
     this.accessToken = authResult.accessToken;
     this.idToken = authResult.idToken;
     this.expiresAt = expiresAt;
-
-    let authState = JSON.parse(localStorage.getItem('authState'));
-    if (!authState) {
-      try {
-        authState = JSON.parse((new Buffer(decodeURI(authResult.state), 'base64')).toString());
-      } catch(e) {
-        console.log('authState is not json, do not store', e, authResult.state);
-      }
-
-      if (authState && (authState['email'] || authState['phone'])) {
-        localStorage.setItem('authState', JSON.stringify(authState));
-      }
-    }
-
-    if (!localStorage.getItem('isLoggedIn') && authState && authState.method === 'sms') {
-      const response = await linkAuth0PhonePasswordlessUserWithBaseUser({
-        accessToken: authResult.accessToken,
-        userMagicIdentifier: authState.magicUserIdentifier, 
-      });
-      if (response.ok) {
-        // authorize again to retrieved the merged token that includes the base user now with phone number
-        this.auth0.authorize();
-      }
-    }
 
     // Set isLoggedIn flag in localStorage
     localStorage.setItem('isLoggedIn', 'true');
@@ -185,13 +204,13 @@ export default class Auth {
 
   renewSession() {
     this.auth0.checkSession({}, (err, authResult) => {
-       if (authResult && authResult.accessToken && authResult.idToken) {
-         this.setSession(authResult);
-       } else if (err) {
-         this.logout();
-         console.log(err);
-         alert(`Could not get a new token (${err.error}: ${err.error_description}).`);
-       }
+      if (authResult && authResult.accessToken && authResult.idToken) {
+        this.setSession(authResult);
+      } else if (err) {
+        this.logout();
+        console.log(err);
+        alert(`Could not get a new token (${err.error}: ${err.error_description}).`);
+      }
     });
   }
 
