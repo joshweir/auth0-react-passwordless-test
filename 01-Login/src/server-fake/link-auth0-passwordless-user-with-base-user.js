@@ -2,18 +2,16 @@ import { confirmAuth0AccessToken } from './confirm-auth0-access-token';
 import { linkAuth0Users } from './link-auth0-users';
 import { getOrCreateBaseAuth0UserByEmail } from './get-or-create-base-auth0-user-by-email';
 import { getAuth0ManagementAPIToken } from './get-auth0-management-api-token';
+import { getUserEmail } from './get-user-email';
 
-const loadUserMagicIdentifierBySha1 = (userMagicIdentifier) => 
-  JSON.parse(localStorage.getItem(`magicUserId|${userMagicIdentifier}`));
-
-export const linkAuth0PhonePasswordlessUserWithBaseUser = async ({ accessToken, userMagicIdentifier }) => {
+export const linkAuth0PhonePasswordlessUserWithBaseUser = async ({ accessToken, userConversationIdentifier, emailBasedAccessToken }) => {
   try {
-    const token = await getAuth0ManagementAPIToken();
-    
-    // confirm userMagicIdentifier is known to us, extract email and phone from magic link
-    const userMagicIdentifierBlob = loadUserMagicIdentifierBySha1(userMagicIdentifier);
-    if (!userMagicIdentifierBlob) {
-      const error = 'invalid userMagicIdentifier';
+    const email = await getUserEmail({ 
+      userConversationIdentifier, 
+      emailBasedAccessToken 
+    });
+    if (!email) {
+      const error = `Could not retrieve user email`;
       console.warn(error);
       throw new Error(error);
     }
@@ -31,8 +29,10 @@ export const linkAuth0PhonePasswordlessUserWithBaseUser = async ({ accessToken, 
       throw new Error(error);
     }
 
+    const token = await getAuth0ManagementAPIToken();
+
     // call the merge endpoint, merging the input auth0 account with the base account, base account user_id: auth0|[email]
-    const baseAuth0User = await getOrCreateBaseAuth0UserByEmail(token, userMagicIdentifierBlob.email);
+    const baseAuth0User = await getOrCreateBaseAuth0UserByEmail(token, email);
     if (!baseAuth0User) {
       const error = `No base auth0 user for email userMagicIdentifierBlob.email`;
       console.warn(error);

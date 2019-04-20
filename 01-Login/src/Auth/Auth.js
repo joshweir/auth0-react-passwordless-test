@@ -126,7 +126,8 @@ export default class Auth {
         if (!localStorage.getItem('isLoggedIn') && authState && authState.method === 'sms') {
           const response = await linkAuth0PhonePasswordlessUserWithBaseUser({
             accessToken: authResult.accessToken,
-            userMagicIdentifier: authState.magicUserIdentifier, 
+            userConversationIdentifier: authState.userConversationIdentifier, 
+            emailBasedAccessToken: authState.emailBasedAccessToken,
           });
           if (response.ok) {
             // authorize again to retrieved the merged token that includes the base user now with phone number

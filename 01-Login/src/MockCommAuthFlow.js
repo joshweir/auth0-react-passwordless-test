@@ -30,7 +30,7 @@ class MockCommAuthFlow extends Component {
       showVerifyCode: null,
       smsVerifyError: '',
       verifyCode: '',
-      magicUserIdentifier: null,
+      userConversationIdentifier: null,
       conversationUri: '',
       userEnteredPhone: '',
       userEnteredPhoneError: '',
@@ -46,13 +46,13 @@ class MockCommAuthFlow extends Component {
         localStorage.setItem(`userPhone|${this.state.email}`, this.state.userStoredPhone);
       }
 
-      const { magicUserIdentifier, phone } = await simulateBackendCreateConvUserIdentifierAndUserClickingEmailLink(
+      const { userConversationIdentifier, phone } = await simulateBackendCreateConvUserIdentifierAndUserClickingEmailLink(
         this.state.email, 
         this.state.conversationUri,
       );
 
       this.setState({
-        magicUserIdentifier,
+        userConversationIdentifier,
         phone,
         step: STEP_USER_CLICKED_EMAIL_LINK,
         showVerifyCode: !!phone,
@@ -60,7 +60,7 @@ class MockCommAuthFlow extends Component {
       if (!!phone) {
         const { ok, error } = await this.props.auth.loginUsingSMS(phone, {
           phone,
-          magicUserIdentifier,
+          userConversationIdentifier,
           email: this.state.email,
           method: 'sms',
         });
@@ -72,11 +72,10 @@ class MockCommAuthFlow extends Component {
   }
 
   async keyPressUserEnteredPhone(e){
-    TODO: update this based on emailBasedAccessToken
     if(e.keyCode === 13 && this.state.userEnteredPhone.length > 0){
       const { phone, error } = await verifyAndUpdateUserPhone({
         phone: this.state.userEnteredPhone,
-        userConversationIdentifier: this.state.magicUserIdentifier,
+        userConversationIdentifier: this.state.userConversationIdentifier,
         emailBasedAccessToken: this.state.emailBasedAccessToken,
       });
       if (!!phone) {
@@ -84,7 +83,8 @@ class MockCommAuthFlow extends Component {
           phone,
           email: this.state.email,
           method: 'sms',
-          magicUserIdentifier: this.state.magicUserIdentifier,
+          userConversationIdentifier: this.state.userConversationIdentifier,
+          emailBasedAccessToken: this.state.emailBasedAccessToken,
         });
         if (!ok) {
           this.setState({ userEnteredPhoneError: error ? error.description : '' })
@@ -98,7 +98,6 @@ class MockCommAuthFlow extends Component {
   }
 
   async handleChangeSMSVerify(evt) {
-    TODO: update this based on emailBasedAccessToken
     this.setState({ verifyCode: evt.target.value });
     if (evt.target.value.length >= 6) {
       const result = await this.props.auth.verifySMSCode(evt.target.value, this.state.phone);
@@ -107,7 +106,6 @@ class MockCommAuthFlow extends Component {
   }
 
   keyPressSMSVerify(e) {
-    TODO: update this based on emailBasedAccessToken?
     if(e.keyCode === 13 && this.state.verifyCode.length > 0){
       const result = this.props.auth.verifySMSCode(this.state.verifyCode, this.state.phone);
       this.setState({ smsVerifyError: result.error ? result.error.description : '' })
