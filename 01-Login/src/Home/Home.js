@@ -61,7 +61,7 @@ class Home extends Component {
   }
 
   render() {
-    const { isAuthenticated } = this.props.auth;
+    const { isAuthenticated, getExpiryDate } = this.props.auth;
     return (
       <div className="container">
         {
@@ -77,6 +77,17 @@ class Home extends Component {
                 <br /><br />email from token:<br />
                 <strong>{JSON.parse(localStorage.getItem('idTokenPayload'))['email']}</strong>
               </div>
+              <h3>About Your Access Token</h3>
+              <p>
+                Your <code>access_token</code> has an expiry date of:{' '}
+                {getExpiryDate()}{' '}current date:{''}{JSON.stringify(new Date())}
+              </p>
+              <p>
+                The token has been scheduled for renewal, but you can also renew it manually from the navbar
+                if you don't want to wait. This manual renewal button is really
+                just for demonstration and you probably won't want such a control
+                in your actual application.
+              </p>
               </div>
             )
         }

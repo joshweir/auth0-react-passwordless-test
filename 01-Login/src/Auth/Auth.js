@@ -1,8 +1,6 @@
 import history from '../history';
 import auth0 from 'auth0-js';
 import { AUTH_CONFIG } from './auth0-variables';
-import { linkAuth0PhonePasswordlessUserWithBaseUser } from '../server-fake/link-auth0-passwordless-user-with-base-user';
-import { loadUserPhoneLambda } from '../server-fake/load-user-phone-lambda';
 const util = require('util');
 require('util.promisify').shim();
 const { promisify } = util;
@@ -11,6 +9,7 @@ export default class Auth {
   accessToken;
   idToken;
   expiresAt;
+  tokenRenewalTimeout;
 
   auth0 = new auth0.WebAuth({
     domain: AUTH_CONFIG.domain,
@@ -30,6 +29,8 @@ export default class Auth {
     this.renewSession = this.renewSession.bind(this);
     this.auth0.passwordlessStart = promisify(this.auth0.passwordlessStart);
     this.auth0.passwordlessVerify = promisify(this.auth0.passwordlessVerify);
+    this.getExpiryDate = this.getExpiryDate.bind(this);
+    this.scheduleRenewal();
   }
 
   login(state) {
@@ -38,52 +39,52 @@ export default class Auth {
       this.auth0.authorize();
   }
 
-  async loginUsingSMS(phoneNumber, stateToRetainOnCallback={}) {
-    localStorage.setItem('authState', JSON.stringify(stateToRetainOnCallback));
-    try {
-      if (!phoneNumber) throw new Error('phone number is empty');
-      const response = await this.auth0.passwordlessStart({
-        connection: 'sms',
-        send: 'code',
-        phoneNumber: phoneNumber,
-        authParams: {
-          state: Buffer.from(JSON.stringify(stateToRetainOnCallback)).toString("base64")
-        }
-      });
+  // async loginUsingSMS(phoneNumber, stateToRetainOnCallback={}) {
+  //   localStorage.setItem('authState', JSON.stringify(stateToRetainOnCallback));
+  //   try {
+  //     if (!phoneNumber) throw new Error('phone number is empty');
+  //     const response = await this.auth0.passwordlessStart({
+  //       connection: 'sms',
+  //       send: 'code',
+  //       phoneNumber: phoneNumber,
+  //       authParams: {
+  //         state: Buffer.from(JSON.stringify(stateToRetainOnCallback)).toString("base64")
+  //       }
+  //     });
 
-      return {
-        response,
-        ok: true,
-      };
-    } catch(err) {
-      console.warn('sms auth error', err);
-      return {
-        ok: false,
-        error: err
-      };
-    }
-  }
+  //     return {
+  //       response,
+  //       ok: true,
+  //     };
+  //   } catch(err) {
+  //     console.warn('sms auth error', err);
+  //     return {
+  //       ok: false,
+  //       error: err
+  //     };
+  //   }
+  // }
 
-  async verifySMSCode(verifyCode, phoneNumber) {
-    try {
-      const response = await this.auth0.passwordlessVerify({
-        connection: 'sms',
-        phoneNumber: phoneNumber,
-        verificationCode: verifyCode
-      });
+  // async verifySMSCode(verifyCode, phoneNumber) {
+  //   try {
+  //     const response = await this.auth0.passwordlessVerify({
+  //       connection: 'sms',
+  //       phoneNumber: phoneNumber,
+  //       verificationCode: verifyCode
+  //     });
 
-      return {
-        response,
-        ok: true,
-      }
-    } catch(err) {
-      console.warn('sms verify error', err);
-      return {
-        ok: false,
-        error: err
-      };
-    }
-  }
+  //     return {
+  //       response,
+  //       ok: true,
+  //     }
+  //   } catch(err) {
+  //     console.warn('sms verify error', err);
+  //     return {
+  //       ok: false,
+  //       error: err
+  //     };
+  //   }
+  // }
 
   async startMagicLinkEmail(email, stateToRetainOnCallback={}) {
     try {
@@ -119,41 +120,17 @@ export default class Auth {
   }
 
   handleAuthentication(hash) {
+    localStorage.setItem(`handleAuth|${Date.now()}`, this.getParamFromHash('state', decodeURIComponent(hash)));
     this.auth0.parseHash(async (err, authResult) => {
       if (authResult && authResult.accessToken && authResult.idToken) {
-        const authState = await this.persistAuthStateIfNotYetDefined(authResult.state);
-
-        if (!localStorage.getItem('isLoggedIn') && authState && authState.method === 'sms') {
-          const response = await linkAuth0PhonePasswordlessUserWithBaseUser({
-            accessToken: authResult.accessToken,
-            userConversationIdentifier: authState.userConversationIdentifier, 
-            emailBasedAccessToken: authState.emailBasedAccessToken,
-          });
-          if (response.ok) {
-            // authorize again to retrieved the merged token that includes the base user now with phone number
-            this.auth0.authorize();
-          } else {
-            console.warn('need to determine what to do here, it cannot just remain on the ' +
-              'callback landing page if the linking of auth0 accounts fails..')
-          }
-        }
-
-        if (!localStorage.getItem('isLoggedIn') && authState && authState.method === 'email') {
-          const phone = await loadUserPhoneLambda({ emailBasedAccessToken: authResult.accessToken });
-
-          history.replace('/mock-comm-auth-flow', { 
-            phone,
-            email: authState.email, 
-            emailBasedAccessToken: authResult.accessToken,
-          });
-        } else {
-          this.setSession(authResult);
-        }
+        await this.persistAuthStateIfNotYetDefined(authResult.state);
+        this.setSession(authResult);
       } else if (err) {
         // when a magic link auth link is clicked, the parseHash fails with invalid_hash, 
         // however if call auth0.authorize again this will immediately call back authorized
         if (/(invalid_hash|invalid_token)/.test(err.error)) {
           const stateFromHash = this.getParamFromHash('state', decodeURIComponent(hash));
+          console.log('relogin', err.description, err, stateFromHash);
           this.login(stateFromHash);
         } else {
           history.replace('/home');
@@ -199,6 +176,9 @@ export default class Auth {
     localStorage.setItem('isLoggedIn', 'true');
     localStorage.setItem('idTokenPayload', JSON.stringify(authResult.idTokenPayload));
 
+    // schedule a token renewal
+    this.scheduleRenewal();
+
     // navigate to the home route
     history.replace('/home');
   }
@@ -208,7 +188,7 @@ export default class Auth {
       if (authResult && authResult.accessToken && authResult.idToken) {
         this.setSession(authResult);
       } else if (err) {
-        this.logout();
+        // this.logout();
         console.log(err);
         alert(`Could not get a new token (${err.error}: ${err.error_description}).`);
       }
@@ -220,6 +200,9 @@ export default class Auth {
     this.accessToken = null;
     this.idToken = null;
     this.expiresAt = 0;
+ 
+    // Clear token renewal
+    clearTimeout(this.tokenRenewalTimeout);
 
     // Remove isLoggedIn flag from localStorage
     localStorage.removeItem('isLoggedIn');
@@ -239,5 +222,19 @@ export default class Auth {
     // access token's expiry time
     let expiresAt = this.expiresAt;
     return new Date().getTime() < expiresAt;
+  }
+
+  scheduleRenewal() {
+    let expiresAt = this.expiresAt;
+    const timeout = expiresAt - Date.now();
+    if (timeout > 0) {
+      this.tokenRenewalTimeout = setTimeout(() => {
+        this.renewSession();
+      }, timeout);
+    }
+  }
+
+  getExpiryDate() {
+    return JSON.stringify(new Date(this.expiresAt));
   }
 }
