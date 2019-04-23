@@ -11,14 +11,14 @@ export const verifyAndUpdateUserPhone = async ({ userConversationIdentifier, ema
     }
   }
 
-  const email = await getUserEmail({ 
+  const { email, error: getEmailError } = await getUserEmail({ 
     userConversationIdentifier, 
     emailBasedAccessToken 
   });
   if (!email) {
     return {
       phone: null,
-      error: 'Could not retrieve user email',
+      error: `Could not retrieve user email: ${getEmailError}`,
     }
   }
 

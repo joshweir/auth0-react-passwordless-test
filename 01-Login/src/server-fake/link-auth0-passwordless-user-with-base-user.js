@@ -6,12 +6,12 @@ import { getUserEmail } from './get-user-email';
 
 export const linkAuth0PhonePasswordlessUserWithBaseUser = async ({ accessToken, userConversationIdentifier, emailBasedAccessToken }) => {
   try {
-    const email = await getUserEmail({ 
+    const { email, error: getEmailError } = await getUserEmail({ 
       userConversationIdentifier, 
       emailBasedAccessToken 
     });
     if (!email) {
-      const error = `Could not retrieve user email`;
+      const error = `Could not retrieve user email: ${getEmailError}`;
       console.warn(error);
       throw new Error(error);
     }

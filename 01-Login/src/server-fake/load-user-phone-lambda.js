@@ -1,7 +1,7 @@
 import { getUserEmail } from './get-user-email';
 
 export const loadUserPhoneLambda = async ({ userConversationIdentifier, emailBasedAccessToken }) => {
-  const email = await getUserEmail({ 
+  const { email } = await getUserEmail({ 
     userConversationIdentifier, 
     emailBasedAccessToken 
   });
