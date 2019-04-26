@@ -14,6 +14,8 @@ const handleAuthentication = ({location}) => {
   console.log('the hash', location.hash);
   if (/access_token|id_token|error/.test(location.hash)) {
     auth.handleAuthentication(location.hash);
+  } else if (/code=/.test(location.search)) {
+    auth.handleRefreshCodeCallback(location.search);
   }
 }
 

@@ -4,6 +4,7 @@ import { AUTH_CONFIG } from './auth0-variables';
 const util = require('util');
 require('util.promisify').shim();
 const { promisify } = util;
+const crypto = require('crypto');
 
 export default class Auth {
   accessToken;
@@ -27,8 +28,8 @@ export default class Auth {
     this.getAccessToken = this.getAccessToken.bind(this);
     this.getIdToken = this.getIdToken.bind(this);
     this.renewSession = this.renewSession.bind(this);
-    this.auth0.passwordlessStart = promisify(this.auth0.passwordlessStart);
-    this.auth0.passwordlessVerify = promisify(this.auth0.passwordlessVerify);
+    // this.auth0.passwordlessStart = promisify(this.auth0.passwordlessStart);
+    // this.auth0.passwordlessVerify = promisify(this.auth0.passwordlessVerify);
     this.getExpiryDate = this.getExpiryDate.bind(this);
     this.scheduleRenewal();
   }
@@ -88,18 +89,33 @@ export default class Auth {
 
   async startMagicLinkEmail(email, stateToRetainOnCallback={}) {
     try {
-      const response = await this.auth0.passwordlessStart({
-        connection: 'email',
-        send: 'link',
-        email: email,
-        authParams: {
-          state: Buffer.from(JSON.stringify(stateToRetainOnCallback)).toString("base64")
-        }
+      const response = await fetch(`${AUTH_CONFIG.apiEndpoint}/passwordless/start`, { 
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email,
+          client_id: AUTH_CONFIG.clientId,
+          connection: 'email',
+          send: 'link',
+          authParams: {
+            state: Buffer.from(JSON.stringify(stateToRetainOnCallback)).toString("base64"),
+            redirect_uri: AUTH_CONFIG.callbackUrl,
+            response_type: 'token id_token',
+            // response_type: 'code',
+            scope: 'openid name profile email picture phone offline_access',
+            nonce: 'thisshouldberandom',
+          }
+        }),
       });
-
+      if (!response.ok) {
+        throw new Error(`sending email login link failed: \n` +
+          `http status: ${response.status} statusText: ${response.statusText} response: ${JSON.stringify(await response.json())}`);
+      }
       return {
-        response,
         ok: true,
+        response: await response.json(),
       };
     } catch(err) {
       console.warn('email magic link send error', err);
@@ -108,15 +124,6 @@ export default class Auth {
         error: err
       };
     }
-  }
-
-  getParamFromHash(param, hash) {
-    const paramElement = hash.replace(/^#/, '').split('&').map(function(p) {
-      return p.split('=');
-    }).filter(function(p) {
-      return p[0] === param;
-    });
-    return paramElement.length > 0 ? paramElement[0][1] : '';
   }
 
   handleAuthentication(hash) {
@@ -237,4 +244,97 @@ export default class Auth {
   getExpiryDate() {
     return JSON.stringify(new Date(this.expiresAt));
   }
+
+
+
+
+  async getRefreshToken() {
+    const verifier = this.base64URLEncode(crypto.randomBytes(32));
+    localStorage.setItem('code_verifier', verifier);
+    const challenge = this.base64URLEncode(this.sha256(verifier));
+    try {
+      const params = {
+        audience: `${AUTH_CONFIG.apiEndpoint}/userinfo`,
+        scope: 'openid name profile email picture phone offline_access', 
+        response_type: 'code', 
+        client_id: AUTH_CONFIG.clientId,
+        redirect_uri: AUTH_CONFIG.callbackUrl, 
+        state: Buffer.from(JSON.stringify({ seeif: 'this state is retained' })).toString("base64"),
+        code_challenge_method: 'S256',
+        code_challenge: challenge,
+      };
+      const query = Object.keys(params).map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join('&');
+      const response = await fetch(`${AUTH_CONFIG.apiEndpoint}/authorize?${query}`);
+      if (!response.ok) {
+        throw new Error(`requesting refresh token failed: \n` +
+          `http status: ${response.status} statusText: ${response.statusText} response: ${JSON.stringify(await response.json())}`);
+      }
+      return {
+        ok: true,
+        response: await response.json(),
+      };
+    } catch(err) {
+      console.warn('requesting refresh token failed', err);
+      return {
+        ok: false,
+        error: err
+      };
+    }
+  }
+
+  base64URLEncode(str) {
+    return str.toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+  }
+
+  sha256(buffer) {
+    return crypto.createHash('sha256').update(buffer).digest();
+  }
+
+  async handleRefreshCodeCallback(search) {
+    const code = this.getParamFromSearch('code', search);
+    try {
+      if (!code) throw new Error('url did not contain code param: ' + search);
+      const response = await fetch(`${AUTH_CONFIG.apiEndpoint}/oauth/token`, { 
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          code,
+          grant_type: 'authorization_code',
+          client_id: AUTH_CONFIG.clientId,
+          code_verifier: localStorage.getItem('code_verifier'),
+          redirect_uri: AUTH_CONFIG.callbackUrl
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`refresh code call failed: \n` +
+          `http status: ${response.status} statusText: ${response.statusText} response: ${JSON.stringify(await response.json())}`);
+      }
+      localStorage.setItem('refresh_code_response', JSON.stringify(await response.json()));
+    } catch(err) {
+      console.warn('refresh code call failed', err);
+    }
+  }
+
+  getParamFromHash(param, hash) {
+    const paramElement = hash.replace(/^#/, '').split('&').map(function(p) {
+      return p.split('=');
+    }).filter(function(p) {
+      return p[0] === param;
+    });
+    return paramElement.length > 0 ? paramElement[0][1] : '';
+  }
+
+  getParamFromSearch(param, search) {
+    const paramElement = search.replace(/^\?/, '').split('&').map(function(p) {
+      return p.split('=');
+    }).filter(function(p) {
+      return p[0] === param;
+    });
+    return paramElement.length > 0 ? paramElement[0][1] : '';
+  };
 }

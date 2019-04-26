@@ -15,6 +15,10 @@ class App extends Component {
     this.props.auth.logout();
   }
 
+  getRefreshToken() {
+    this.props.auth.getRefreshToken();
+  }
+
   renewToken() {
     const { renewSession } = this.props.auth;
     renewSession();
@@ -84,6 +88,18 @@ class App extends Component {
               >
                 Renew Token
               </Button>}
+            {
+              isAuthenticated() && (
+                  <Button
+                    id="qsRefreshTokenBtn"
+                    bsStyle="primary"
+                    className="btn-margin"
+                    onClick={this.getRefreshToken.bind(this)}
+                  >
+                    Get a Refresh Token (naughty)
+                  </Button>
+                )
+            }
           </Navbar.Header>
         </Navbar>
       </div>
