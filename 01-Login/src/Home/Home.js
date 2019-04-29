@@ -61,7 +61,7 @@ class Home extends Component {
   }
 
   render() {
-    const { isAuthenticated, getExpiryDate } = this.props.auth;
+    const { isAuthenticated, getExpiryDate, getAccessToken, getRefreshToken } = this.props.auth;
     return (
       <div className="container">
         {
@@ -79,7 +79,7 @@ class Home extends Component {
               </div>
               <h3>About Your Access Token</h3>
               <p>
-                Your <code>access_token</code> has an expiry date of:{' '}
+                Your <code>access_token</code> (<code>{getAccessToken()}</code>) has an expiry date of:{' '}
                 {getExpiryDate()}{' '}current date:{''}{JSON.stringify(new Date())}
               </p>
               <p>
@@ -88,6 +88,7 @@ class Home extends Component {
                 just for demonstration and you probably won't want such a control
                 in your actual application.
               </p>
+              <p>Refresh token: {getRefreshToken()}</p>
               </div>
             )
         }

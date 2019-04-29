@@ -1,3 +1,5 @@
+import { confirmAuth0AccessToken } from '../server-fake/confirm-auth0-access-token';
+import { refreshAccessToken } from '../server-fake/refresh-access-token';
 import history from '../history';
 import auth0 from 'auth0-js';
 import { AUTH_CONFIG } from './auth0-variables';
@@ -11,6 +13,7 @@ export default class Auth {
   idToken;
   expiresAt;
   tokenRenewalTimeout;
+  refreshToken;
 
   auth0 = new auth0.WebAuth({
     domain: AUTH_CONFIG.domain,
@@ -26,6 +29,7 @@ export default class Auth {
     this.handleAuthentication = this.handleAuthentication.bind(this);
     this.isAuthenticated = this.isAuthenticated.bind(this);
     this.getAccessToken = this.getAccessToken.bind(this);
+    this.getRefreshToken = this.getRefreshToken.bind(this);
     this.getIdToken = this.getIdToken.bind(this);
     this.renewSession = this.renewSession.bind(this);
     // this.auth0.passwordlessStart = promisify(this.auth0.passwordlessStart);
@@ -87,27 +91,37 @@ export default class Auth {
   //   }
   // }
 
-  async startMagicLinkEmail(email, stateToRetainOnCallback={}) {
+  async startMagicLinkEmail(email, responseType, stateToRetainOnCallback={}) {
+    const verifier = this.base64URLEncode(crypto.randomBytes(32));
+    localStorage.setItem('code_verifier', verifier);
+    const challenge = this.base64URLEncode(this.sha256(verifier));
     try {
+      const body = {
+        email,
+        client_id: AUTH_CONFIG.clientId,
+        connection: 'email',
+        send: 'link',
+        authParams: {
+          state: Buffer.from(JSON.stringify(stateToRetainOnCallback)).toString("base64"),
+          redirect_uri: AUTH_CONFIG.callbackUrl,
+          response_type: responseType,
+          scope: 'openid name profile email picture phone offline_access',
+          nonce: 'thisshouldberandom',
+        }
+      }
+      if (responseType === 'code') {
+        body.authParams = { ...body.authParams, ...{
+          audience: `${AUTH_CONFIG.apiEndpoint}/userinfo`,
+          code_challenge_method: 'S256',
+          code_challenge: challenge,
+        }}
+      }
       const response = await fetch(`${AUTH_CONFIG.apiEndpoint}/passwordless/start`, { 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          email,
-          client_id: AUTH_CONFIG.clientId,
-          connection: 'email',
-          send: 'link',
-          authParams: {
-            state: Buffer.from(JSON.stringify(stateToRetainOnCallback)).toString("base64"),
-            redirect_uri: AUTH_CONFIG.callbackUrl,
-            response_type: 'token id_token',
-            // response_type: 'code',
-            scope: 'openid name profile email picture phone offline_access',
-            nonce: 'thisshouldberandom',
-          }
-        }),
+        body: JSON.stringify(body),
       });
       if (!response.ok) {
         throw new Error(`sending email login link failed: \n` +
@@ -152,6 +166,10 @@ export default class Auth {
     return this.accessToken;
   }
 
+  getRefreshToken() {
+    return localStorage.getItem('refreshToken');
+  }
+
   getIdToken() {
     return this.idToken;
   }
@@ -178,34 +196,48 @@ export default class Auth {
     this.accessToken = authResult.accessToken;
     this.idToken = authResult.idToken;
     this.expiresAt = expiresAt;
-
+    if (authResult.refreshToken) {
+      localStorage.setItem('refreshToken', authResult.refreshToken);
+    }
     // Set isLoggedIn flag in localStorage
     localStorage.setItem('isLoggedIn', 'true');
     localStorage.setItem('idTokenPayload', JSON.stringify(authResult.idTokenPayload));
 
     // schedule a token renewal
-    this.scheduleRenewal();
+    await this.scheduleRenewal();
 
     // navigate to the home route
     history.replace('/home');
   }
 
-  renewSession() {
-    this.auth0.checkSession({}, (err, authResult) => {
+  async renewSession() {
+    const refreshToken = localStorage.getItem('refreshToken');
+    if (refreshToken) {
+      const authResult = await this.buildAuthResultFromOauthResponse(await refreshAccessToken(refreshToken));
       if (authResult && authResult.accessToken && authResult.idToken) {
         this.setSession(authResult);
-      } else if (err) {
-        // this.logout();
-        console.log(err);
-        alert(`Could not get a new token (${err.error}: ${err.error_description}).`);
+      } else {
+        console.log(`Unexpected authResult refreshing access token: ${JSON.stringify(authResult)}`);
+        alert(`Error: Unexpected authResult. Check the console for further details.`);
       }
-    });
+    } else {
+      this.auth0.checkSession({}, (err, authResult) => {
+        if (authResult && authResult.accessToken && authResult.idToken) {
+          this.setSession(authResult);
+        } else if (err) {
+          // this.logout();
+          console.log(err);
+          alert(`Could not get a new token (${err.error}: ${err.error_description}).`);
+        }
+      });
+    }
   }
 
   logout() {
     // Remove tokens and expiry time
     this.accessToken = null;
     this.idToken = null;
+    localStorage.removeItem('refreshToken');
     this.expiresAt = 0;
  
     // Clear token renewal
@@ -248,39 +280,39 @@ export default class Auth {
 
 
 
-  async getRefreshToken() {
-    const verifier = this.base64URLEncode(crypto.randomBytes(32));
-    localStorage.setItem('code_verifier', verifier);
-    const challenge = this.base64URLEncode(this.sha256(verifier));
-    try {
-      const params = {
-        audience: `${AUTH_CONFIG.apiEndpoint}/userinfo`,
-        scope: 'openid name profile email picture phone offline_access', 
-        response_type: 'code', 
-        client_id: AUTH_CONFIG.clientId,
-        redirect_uri: AUTH_CONFIG.callbackUrl, 
-        state: Buffer.from(JSON.stringify({ seeif: 'this state is retained' })).toString("base64"),
-        code_challenge_method: 'S256',
-        code_challenge: challenge,
-      };
-      const query = Object.keys(params).map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join('&');
-      const response = await fetch(`${AUTH_CONFIG.apiEndpoint}/authorize?${query}`);
-      if (!response.ok) {
-        throw new Error(`requesting refresh token failed: \n` +
-          `http status: ${response.status} statusText: ${response.statusText} response: ${JSON.stringify(await response.json())}`);
-      }
-      return {
-        ok: true,
-        response: await response.json(),
-      };
-    } catch(err) {
-      console.warn('requesting refresh token failed', err);
-      return {
-        ok: false,
-        error: err
-      };
-    }
-  }
+  // async getRefreshToken() {
+  //   const verifier = this.base64URLEncode(crypto.randomBytes(32));
+  //   localStorage.setItem('code_verifier', verifier);
+  //   const challenge = this.base64URLEncode(this.sha256(verifier));
+  //   try {
+  //     const params = {
+  //       audience: `${AUTH_CONFIG.apiEndpoint}/userinfo`,
+  //       scope: 'openid name profile email picture phone offline_access', 
+  //       response_type: 'code', 
+  //       client_id: AUTH_CONFIG.clientId,
+  //       redirect_uri: AUTH_CONFIG.callbackUrl, 
+  //       state: Buffer.from(JSON.stringify({ seeif: 'this state is retained' })).toString("base64"),
+  //       code_challenge_method: 'S256',
+  //       code_challenge: challenge,
+  //     };
+  //     const query = Object.keys(params).map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join('&');
+  //     const response = await fetch(`${AUTH_CONFIG.apiEndpoint}/authorize?${query}`);
+  //     if (!response.ok) {
+  //       throw new Error(`requesting refresh token failed: \n` +
+  //         `http status: ${response.status} statusText: ${response.statusText} response: ${JSON.stringify(await response.json())}`);
+  //     }
+  //     return {
+  //       ok: true,
+  //       response: await response.json(),
+  //     };
+  //   } catch(err) {
+  //     console.warn('requesting refresh token failed', err);
+  //     return {
+  //       ok: false,
+  //       error: err
+  //     };
+  //   }
+  // }
 
   base64URLEncode(str) {
     return str.toString('base64')
@@ -295,6 +327,8 @@ export default class Auth {
 
   async handleRefreshCodeCallback(search) {
     const code = this.getParamFromSearch('code', search);
+    const authState = this.getParamFromSearch('state', search);
+    await this.persistAuthStateIfNotYetDefined(authState);
     try {
       if (!code) throw new Error('url did not contain code param: ' + search);
       const response = await fetch(`${AUTH_CONFIG.apiEndpoint}/oauth/token`, { 
@@ -314,10 +348,35 @@ export default class Auth {
         throw new Error(`refresh code call failed: \n` +
           `http status: ${response.status} statusText: ${response.statusText} response: ${JSON.stringify(await response.json())}`);
       }
-      localStorage.setItem('refresh_code_response', JSON.stringify(await response.json()));
+
+      const authResult = await this.buildAuthResultFromOauthResponse(await response.json());
+      if (authResult && authResult.accessToken && authResult.idToken && authResult.refreshToken) {
+        this.setSession(authResult);
+      } else {
+        console.log(`Unexpected authResult: ${JSON.stringify(authResult)}`);
+        alert(`Error: Unexpected authResult. Check the console for further details.`);
+      }
+      // localStorage.setItem('refresh_code_response', JSON.stringify(await response.json()));
     } catch(err) {
       console.warn('refresh code call failed', err);
     }
+  }
+
+  async buildAuthResultFromOauthResponse(response) {
+    const result = {
+      accessToken: response.access_token,
+      expiresIn: response.expires_in,
+      idToken: response.id_token,
+      idTokenPayload: await confirmAuth0AccessToken(response.access_token),
+      scope: response.scope,
+      tokenType: response.token_type,
+    }
+
+    if (response.refresh_token) {
+      result.refreshToken = response.refresh_token;
+    }
+
+    return result;
   }
 
   getParamFromHash(param, hash) {

@@ -8,13 +8,14 @@ const STEP_MOCK_PARTICIPANT_DATA = 1;
 const STEP_MOCK_PROTECTED_PAGE = 3;
 const STEP_EMAIL_MAGIC_LINK_SENT = 4;
 const STEP_FROM_EMAIL_MAGIC_LINK = 5;
+const STEP_WEB_OR_NATIVE = 6;
 
 class MockCommAuthFlow extends Component {
   constructor(props) {
     super(props);
     this.state = {
       step: props.location && props.location.state && props.location.state.emailBasedAccessToken ? 
-        STEP_FROM_EMAIL_MAGIC_LINK : STEP_NEW_PARTICIPANT_EVENT_OR_HOME_PAGE,
+        STEP_FROM_EMAIL_MAGIC_LINK : STEP_WEB_OR_NATIVE,
       email: props.location && props.location.state && props.location.state.email ? 
         props.location.state.email : JOSH_TEMP_CONFIG.email,
       phone: props.location && props.location.state && props.location.state.phone ? 
@@ -32,14 +33,19 @@ class MockCommAuthFlow extends Component {
       userEnteredPhoneError: '',
       userEnteredEmail: '',
       userEnteredEmailError: '',
+      nativeFlow: false,
     }
   }
 
   async startMagicLinkEmail(email) {
-    const result = this.props.auth.startMagicLinkEmail(email, {
-      email,
-      conversationUri: this.state.conversationUri,
-    });
+    const result = this.props.auth.startMagicLinkEmail(
+      email, 
+      this.state.nativeFlow ? 'code' : 'token id_token',
+      {
+        email,
+        conversationUri: this.state.conversationUri,
+      }
+    );
     this.setState({
       userEnteredEmailError: result.error ? result.error.description : '',
       step: result.error ? this.state.step : STEP_EMAIL_MAGIC_LINK_SENT,
@@ -89,6 +95,36 @@ class MockCommAuthFlow extends Component {
             <h4>
               You are logged in!
             </h4>
+          )
+        }
+        {
+          !isAuthenticated() && step === STEP_WEB_OR_NATIVE && (
+            <div>
+              <Button
+                bsStyle="primary"
+                className="btn-margin"
+                onClick={() => {
+                  this.setState({ 
+                    step: STEP_NEW_PARTICIPANT_EVENT_OR_HOME_PAGE,
+                  });
+                }}
+              >
+                Web
+              </Button>
+              or
+              <Button
+                bsStyle="primary"
+                className="btn-margin"
+                onClick={() => {
+                  this.setState({ 
+                    nativeFlow: true,
+                    step: STEP_NEW_PARTICIPANT_EVENT_OR_HOME_PAGE,
+                  });
+                }}
+              >
+                Native
+              </Button>
+            </div>
           )
         }
         {
