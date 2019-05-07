@@ -61,7 +61,7 @@ class Home extends Component {
   }
 
   render() {
-    const { isAuthenticated, getExpiryDate, getAccessToken, getRefreshToken } = this.props.auth;
+    const { isAuthenticated, getExpiryDate, getAccessToken, getRefreshToken, getIdToken } = this.props.auth;
     return (
       <div className="container">
         {
@@ -89,6 +89,7 @@ class Home extends Component {
                 in your actual application.
               </p>
               <p>Refresh token: {getRefreshToken()}</p>
+              <p>Id token: {getIdToken()}</p>
               </div>
             )
         }

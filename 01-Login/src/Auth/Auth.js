@@ -1,8 +1,9 @@
 import { confirmAuth0AccessToken } from '../server-fake/confirm-auth0-access-token';
 import { refreshAccessToken } from '../server-fake/refresh-access-token';
 import history from '../history';
-import auth0 from 'auth0-js';
+// import auth0 from 'auth0-js';
 import { AUTH_CONFIG } from './auth0-variables';
+import { WebAuth } from '../my-auth0js/web-auth'
 const util = require('util');
 require('util.promisify').shim();
 const { promisify } = util;
@@ -15,7 +16,14 @@ export default class Auth {
   tokenRenewalTimeout;
   refreshToken;
 
-  auth0 = new auth0.WebAuth({
+  // auth0 = new auth0.WebAuth({
+  //   domain: AUTH_CONFIG.domain,
+  //   clientID: AUTH_CONFIG.clientId,
+  //   redirectUri: AUTH_CONFIG.callbackUrl,
+  //   responseType: 'token id_token',
+  //   scope: 'openid name profile email picture phone'
+  // });
+  auth0 = new WebAuth({
     domain: AUTH_CONFIG.domain,
     clientID: AUTH_CONFIG.clientId,
     redirectUri: AUTH_CONFIG.callbackUrl,
